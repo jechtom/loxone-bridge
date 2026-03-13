@@ -4,6 +4,8 @@ A lightweight, stateless HTTP proxy service that extends the networking capabili
 
 Unlike Home Assistant or Node-RED, LoxoneBridge has no database, no config files, and no UI — just a single binary you deploy and forget. All routing logic lives in the URL itself. Fewer moving parts means fewer things that can break at 2 AM when your alarm system needs to work.
 
+![Loxone Bridge Logo](loxone-bridge-logo-small.png)
+
 ## Features
 
 1. **Digest Authentication Translation** — Converts Loxone-compatible Basic Authentication into Digest Authentication for third-party devices (e.g., Shelly, Dahua) that require it.
