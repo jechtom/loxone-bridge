@@ -1,124 +1,183 @@
-# LoxoneApiBridge
+# LoxoneBridge
 
-## Úvod a motivace
-**LoxoneBridge** je jednoduchá služba, jejíž hlavním cílem je doplnit a rozšířit síťové integrační možnosti systému Loxone Miniserver tam, kde pokulhávají.
+A lightweight, stateless HTTP proxy service that extends the networking capabilities of Loxone Miniserver. It bridges gaps where Loxone's built-in HTTP client falls short.
 
-## Hlavní funkce
+## Features
 
-1. **Podpora Digest Authentication**
-   Translací (překladem) Loxone kompatibilní Basic Authentication do Digest Authentication pro komunikaci se zařízeními třetích stran, která vyžadují složitější způsob ověřování. Například vhodné pro výrobky, které nepodporují Basic Auth jako výrobky od Shelly nebo Dahua.
-2. **Parsování JSON (JSON Path)**
-   Přijímá komplexní JSON odpovědi a převede do formátu, který lze snadno a jednoznačně parsovat v Loxone.
-3. **Příjem HTTP hooků a překlad na UDP**
-   Umí přijímat HTTP callbacky (webhooky) z jiných systémů a stavové změny plynule přeposílat do Loxone miniserveru jako UDP.
+1. **Digest Authentication Translation** — Converts Loxone-compatible Basic Authentication into Digest Authentication for third-party devices (e.g., Shelly, Dahua) that require it.
+2. **JSON Flattening** — Accepts complex JSON responses and converts them into a flat `key=value` format easily parseable by Loxone.
+3. **HTTP-to-UDP Translation** — Receives HTTP requests and forwards the data as raw UDP datagrams to any target.
+4. **HTTPS with Certificate Ignoring** — Proxies to HTTPS endpoints while intentionally ignoring invalid or self-signed certificates.
 
-## Filozofie a konfigurace
+## Philosophy
 
-Aplikace je navržena pro maximální jednoduchost provozu. Je bezstavová a není potřeba definovat konfigurační soubory. **Veškerá konfigurace je obsažena a deklarována přímo v URL adrese.** Loxone odesílá své dotazy s instrukcemi ohledně typu překladu přímo v cestě (path) požadavku.
+The application is designed for maximum simplicity. It is **stateless** and requires **no configuration files**. All configuration is declared directly in the request URL — Loxone sends its requests with routing instructions embedded in the path.
 
-### Příklady použití (Routování přes URL)
+## Quick Start
 
-* **Překlad Basic Auth na Digest Auth (HTTP)**
-  `GET /digest/http/192.168.1.10/aaa`
-  Převezme Basic autentizaci zaslanou Loxonem, naváže s cílem komunikaci, zpracuje případný 401 Unauthorized challenge a vyřídí dotaz proti `http://192.168.1.10/aaa` přes Digest Auth.
+### Docker
 
-* **Ignorování chyb HTTPS certifikátu**
-  `GET /https-ignore-cert/192.168.1.10/aaa`
-  Směruje na HTTPS adresu `https://192.168.1.10/aaa` a záměrně ignoruje chyby neplatného nebo self-signed certifikátu u koncového zařízení.
+```bash
+docker run -d -p 8080:8080 ghcr.io/<owner>/loxone-bridge:latest
+```
 
-* **Odesílání UDP paketů přes HTTP**
-  `GET /udp/192.168.1.10:444/data`
-  Záchytný bod pro odeslání UDP. Jakékoliv odeslané tělo (request body) je aplikací LoxoneApiBridge vzato a beze změny vypáleno jako raw UDP datagram na IP `192.168.1.10` a port `444`.
+### Build from Source
 
-* **Přeloží JSON jako plochý seznam hodnot**
-  `GET /flatten-json/http/192.168.1.10/aaaa`
-  Navštíví adresu `http://192.168.1.10/aaaa` a vrací JSON v plochém formátu, například:
-  ```json
-  {
-    "data": {
-        "volume": 124,
-        "error": false
-    },
-    "name": "device-1",
-    "versions": [ "a", "b", "c" ]
-  }
-  ```
-  Konvertuje na:
-  ```
-  data.volume=124
-  data.error=false
-  name=device-1
-  versions[0]=a
-  versions[1]=b
-  versions[2]=c
-  ```
+```bash
+go build -o loxone-bridge ./cmd/loxone-bridge
+./loxone-bridge
+```
 
-## Spuštění
+The service listens on port `8080` by default. Set the `PORT` environment variable to change it.
 
-Službu lze nastartovat řadou způsobů. Například pomocí docker nebo vlastního sestavení. 
+### Health Check
 
-TODO: Informace doplním po dokončení.
+```
+GET /healthz
+```
 
-# Dokumentace
+## Usage Examples
 
-## Skladba adresy požadavků
+### Basic Auth → Digest Auth (HTTP)
 
-Modifikátory se přidávají na začátek adresy.
+```
+GET /digest/http/192.168.1.10/cgi-bin/accessControl.cgi?action=openDoor&channel=1
+```
 
-Formát:
+Takes the Basic Authentication credentials sent by Loxone, establishes a Digest Authentication handshake with the target, and proxies the request to `http://192.168.1.10/cgi-bin/accessControl.cgi?action=openDoor&channel=1`.
+
+In Loxone, configure the URL as:
+```
+http://admin:PASSWORD@loxone-bridge:8080/digest/http/10.0.0.5/cgi-bin/accessControl.cgi?action=openDoor&channel=1
+```
+
+### HTTPS with Ignored Certificate Errors
+
+```
+GET /https-ignore-cert/192.168.1.10/api/status
+```
+
+Proxies to `https://192.168.1.10/api/status` while ignoring invalid or self-signed TLS certificates.
+
+### Send UDP Packets via HTTP
+
+```
+GET /udp/192.168.1.10:444/data-to-send
+```
+
+Sends the path content (or request body if present) as a raw UDP datagram to `192.168.1.10:444`.
+
+### Flatten JSON Response
+
+```
+GET /flatten-json/http/192.168.1.10/api/data
+```
+
+Fetches `http://192.168.1.10/api/data` and converts the JSON response:
+
+```json
+{
+  "data": {
+      "volume": 124,
+      "error": false
+  },
+  "name": "device-1",
+  "versions": ["a", "b", "c"]
+}
+```
+
+Into a flat text format:
+
+```
+data.error=false
+data.volume=124
+name=device-1
+versions[0]=a
+versions[1]=b
+versions[2]=c
+```
+
+### Combining Modifiers
+
+Modifiers can be chained. For example, Digest Auth + JSON Flattening:
+
+```
+GET /digest/flatten-json/https/10.0.0.1/api/sensors
+```
+
+---
+
+## URL Format
+
 ```
 http://loxone-bridge/{modifiers}/{protocol}/{address}/{path-and-query}
-       |-----------| |---------| |------------------| |--------------|
-       |             |           |                    |
-       |             |           |                    +- cesta, která se přeposílá
+       |-----------| |---------| |--------| |--------|
+       |             |           |          |
+       |             |           |          +-- downstream path forwarded to target
        |             |           |
-       |             |           +- protokol a adresa serveru, kam požadavek poslat
+       |             |           +-- target address (IP or hostname, optional port)
        |             |
-       |             +- nula nebo více modifikátorů
+       |             +-- zero or more modifiers
        |
-       +- adresa Loxone Bridge
-      
+       +-- LoxoneBridge address
 ```
 
 ## Modifiers
 
-### Konverze Basic Auth na Digest
-
-Segment: `/digest`
-
-Konvertuje basic auth na digest auth. Basic auth se v Loxonu přidává před adresu serveru. Celková adresa zadaná v loxonu může být například:
-```
-http://admin:PASSWORD@loxone-bridge/digest/http/10.0.0.5/cgi-bin/accessControl.cgi?action=openDoor&channel=1
-```
-Bridge vytvoří HTTP request s DIGEST autentizací na adresu:
-```
-http://10.0.0.5/cgi-bin/accessControl.cgi?action=openDoor&channel=1
-```
+| Segment        | Description                                                   |
+|----------------|---------------------------------------------------------------|
+| `/digest`      | Converts Basic Auth to Digest Auth for the upstream request   |
+| `/flatten-json`| Converts JSON response to flat `key=value` text format        |
 
 ## Protocols
 
-### HTTP
-
-Segment: `/http`
-
-### HTTPS
-
-Segment: `/https`
-
-### HTTPS + ignore certificate errors
-
-Segment: `/https-ignore-cert`
-
-### UDP
-
-Segment: `/udp`
-
-Pokud se použije, odešle UDP data na adresu. 
-
-Při použití tohoto protokolu se vše v segmentu `{path-and-query}` odešle jako obsah UDP data paketu.
+| Segment              | Description                                              |
+|----------------------|----------------------------------------------------------|
+| `/http`              | Plain HTTP                                               |
+| `/https`             | HTTPS with certificate validation                        |
+| `/https-ignore-cert` | HTTPS ignoring certificate errors (self-signed, expired) |
+| `/udp`               | Send data as UDP datagram (port required in address)     |
 
 ## Address
 
-Adresa, kam se odešle požadavek (`/adresa`). IP adresa nebo DNS jméno. 
+Target address as IP or hostname. Optionally include a port with `:port`. Port is **required** for UDP; HTTP defaults to `80`, HTTPS to `443`.
 
-Lze uvést i port (`/adresa:port`). Port je u UDP povinný, u HTTP a HTTPS se použije výchozí (80/443).
+## Development
+
+### Prerequisites
+
+- Go 1.23+
+
+### Run Tests
+
+```bash
+go test -v -race ./...
+```
+
+### Build
+
+```bash
+go build -o loxone-bridge ./cmd/loxone-bridge
+```
+
+### Docker Build
+
+```bash
+docker build -t loxone-bridge .
+```
+
+## CI/CD
+
+- **CI** (`ci.yml`): Runs tests and builds on every push to `main` and on pull requests.
+- **Release** (`release.yml`): On tag push (`v*`), runs tests, builds a multi-arch Docker image (amd64 + arm64), and pushes to GitHub Container Registry (GHCR).
+
+### Creating a Release
+
+```bash
+git tag v1.0.0
+git push origin v1.0.0
+```
+
+## License
+
+MIT
