@@ -1,6 +1,8 @@
 # Build stage
 FROM golang:1.23-alpine AS builder
 
+ARG VERSION=dev
+
 RUN apk add --no-cache git ca-certificates
 
 WORKDIR /app
@@ -10,7 +12,7 @@ RUN go mod download
 
 COPY . .
 
-RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /loxone-bridge ./cmd/loxone-bridge
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w -X main.version=${VERSION}" -o /loxone-bridge ./cmd/loxone-bridge
 
 # Runtime stage
 FROM alpine:3.20

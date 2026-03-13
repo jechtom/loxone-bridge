@@ -10,7 +10,12 @@ import (
 	"github.com/loxone-bridge/internal/handler"
 )
 
+// version is set at build time via -ldflags.
+var version = "dev"
+
 func main() {
+	log.Printf("LoxoneBridge version %s", version)
+
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"

@@ -67,6 +67,8 @@ GET /udp/192.168.1.10:444/data-to-send
 
 Sends the path content (or request body if present) as a raw UDP datagram to `192.168.1.10:444`.
 
+This is particularly useful for translating HTTP webhooks into UDP messages that Loxone Miniserver can natively consume via its UDP Virtual Input. For example, Dahua cameras can send HTTP alarm notifications (motion detection, tampering, etc.) to LoxoneBridge, which then forwards them as UDP datagrams directly to Loxone — no additional middleware needed.
+
 ### Flatten JSON Response
 
 ```
@@ -110,37 +112,36 @@ GET /digest/flatten-json/https/10.0.0.1/api/sensors
 ## URL Format
 
 ```
-http://loxone-bridge/{modifiers}/{protocol}/{address}/{path-and-query}
-       |-----------| |---------| |--------| |--------|
-       |             |           |          |
-       |             |           |          +-- downstream path forwarded to target
-       |             |           |
-       |             |           +-- target address (IP or hostname, optional port)
-       |             |
-       |             +-- zero or more modifiers
-       |
-       +-- LoxoneBridge address
+http://loxone-bridge/{modifiers*}/{protocol}/{address}/{path}
 ```
 
 ## Modifiers
 
+Zero or more optional URL segments placed before the protocol. Modifiers alter how LoxoneBridge processes the request or the response. Multiple modifiers can be chained together in any order.
+
 | Segment        | Description                                                   |
 |----------------|---------------------------------------------------------------|
-| `/digest`      | Converts Basic Auth to Digest Auth for the upstream request   |
-| `/flatten-json`| Converts JSON response to flat `key=value` text format        |
+| `/digest`      | Converts Basic Auth credentials from the incoming request into Digest Auth for the upstream target |
+| `/flatten-json`| Converts the upstream JSON response into a flat `key=value` text format (one line per value) |
 
 ## Protocols
 
+The protocol segment determines how LoxoneBridge forwards the request to the target device. It defines the transport scheme and, in the case of UDP, changes the request semantics entirely.
+
 | Segment              | Description                                              |
 |----------------------|----------------------------------------------------------|
-| `/http`              | Plain HTTP                                               |
-| `/https`             | HTTPS with certificate validation                        |
-| `/https-ignore-cert` | HTTPS ignoring certificate errors (self-signed, expired) |
-| `/udp`               | Send data as UDP datagram (port required in address)     |
+| `/http`              | Plain HTTP (default port 80)                             |
+| `/https`             | HTTPS with standard certificate validation (default port 443) |
+| `/https-ignore-cert` | HTTPS that skips TLS certificate verification — useful for self-signed or expired certificates |
+| `/udp`               | Sends data as a raw UDP datagram — port is **required** in the address segment |
 
 ## Address
 
-Target address as IP or hostname. Optionally include a port with `:port`. Port is **required** for UDP; HTTP defaults to `80`, HTTPS to `443`.
+The target host as an IP address or DNS hostname. A port can be appended with `:port` (e.g., `192.168.1.10:8080`). The port is **required** for UDP. For HTTP and HTTPS the standard default ports (`80` / `443`) are used when omitted.
+
+## Path
+
+Everything after the address segment is forwarded as-is to the target, including query parameters. For example, in `/http/10.0.0.5/cgi-bin/control?action=open&channel=1`, the path `/cgi-bin/control?action=open&channel=1` is sent to the upstream server unchanged. For the UDP protocol, the path content is used as the UDP payload (unless a request body is provided, which takes precedence).
 
 ## Development
 
