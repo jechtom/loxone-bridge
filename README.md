@@ -17,6 +17,12 @@ Unlike Home Assistant or Node-RED, LoxoneBridge has no database, no config files
 
 The application is designed for maximum simplicity. It is **stateless** and requires **no configuration files**. All configuration is declared directly in the request URL — Loxone sends its requests with routing instructions embedded in the path.
 
+## Usage Examples
+
+- [`docs/dahua-vto-door-unlock.md`](./docs/dahua-vto-door-unlock.md) — Dahua VTO unlock via digest authentication
+- [`docs/dahua-event-trigger.md`](./docs/dahua-event-trigger.md) — Dahua HTTP event callbacks forwarded to Loxone UDP
+- [`docs/shelly-communication.md`](./docs/shelly-communication.md) — Shelly digest authentication with flattened JSON responses
+
 ## Quick Start
 
 ### Docker
@@ -110,6 +116,8 @@ Modifiers can be chained. For example, Digest Auth + JSON Flattening:
 ```
 GET /digest/flatten-json/https/10.0.0.1/api/sensors
 ```
+
+For more complete Loxone-oriented setup examples, see the dedicated guides in the [`docs/`](./docs/) folder.
 
 ---
 

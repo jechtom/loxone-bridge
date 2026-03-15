@@ -8,6 +8,7 @@ LoxoneBridge is a stateless HTTP proxy service written in Go. It extends Loxone 
 
 ```
 cmd/loxone-bridge/main.go     -- entry point, HTTP server setup
+docs/                         -- user-facing documentation and integration guides
 internal/
   handler/handler.go           -- main HTTP handler, request routing
   urlparser/urlparser.go       -- URL parsing (modifiers, protocol, address, path)
@@ -39,3 +40,5 @@ internal/
 - All code, comments, and documentation in English.
 - Tests alongside source files (`*_test.go`).
 - Use `log.Printf` for structured logging with `REQ:` / `ERROR:` prefixes.
+- Keep end-user documentation in `/docs` when it grows beyond the root `README.md`.
+- Treat `/docs` as documentation-only content, similar to `README.md`; it should not affect the Go build or runtime artifacts.
