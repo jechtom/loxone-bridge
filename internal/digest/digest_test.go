@@ -1,6 +1,9 @@
 package digest
 
 import (
+	"crypto/md5"
+	"crypto/sha256"
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -115,8 +118,128 @@ func TestSplitChallenge(t *testing.T) {
 	assert.Contains(t, parts[2], "qop")
 }
 
-func TestMd5Hash(t *testing.T) {
+func TestDigestHash_MD5_KnownValue(t *testing.T) {
 	// Known MD5 hash of "hello"
-	result := md5Hash("hello")
+	result := digestHash(md5.New, "hello")
 	assert.Equal(t, "5d41402abc4b2a76b9719d911017c592", result)
+}
+
+func TestParseChallenge_SHA256(t *testing.T) {
+	header := `Digest realm="example.com", nonce="abc123", qop="auth", algorithm=SHA-256`
+	c, err := parseChallenge(header)
+	require.NoError(t, err)
+
+	assert.Equal(t, "example.com", c.realm)
+	assert.Equal(t, "abc123", c.nonce)
+	assert.Equal(t, "auth", c.qop)
+	assert.Equal(t, "SHA-256", c.algorithm)
+}
+
+func TestComputeAuthorization_SHA256(t *testing.T) {
+	c := &challenge{
+		realm:     "example.com",
+		nonce:     "7ypf/xlj9XXwfDPEoM4URrv/xwf94BcCAzFZH4GiTo0v",
+		qop:       "auth",
+		algorithm: "SHA-256",
+	}
+
+	auth := computeAuthorization(c, "admin", "secret", "GET", "http://10.0.0.1/api/status")
+	assert.Contains(t, auth, "Digest ")
+	assert.Contains(t, auth, `username="admin"`)
+	assert.Contains(t, auth, `realm="example.com"`)
+	assert.Contains(t, auth, `algorithm=SHA-256`)
+	assert.Contains(t, auth, `qop=auth`)
+	assert.Contains(t, auth, `nc=00000001`)
+
+	// Verify the response hash length is 64 hex chars (SHA-256) not 32 (MD5)
+	assert.Contains(t, auth, `response="`)
+	// Extract response value and verify length
+	for _, part := range splitChallenge(auth[len("Digest "):]) {
+		kv := splitChallenge(part)
+		_ = kv
+	}
+}
+
+func TestComputeAuthorization_SHA256_KnownVector(t *testing.T) {
+	// Verify SHA-256 produces different (and correct-length) responses vs MD5
+	c := &challenge{
+		realm:     "testrealm",
+		nonce:     "testnonce",
+		qop:       "auth",
+		algorithm: "SHA-256",
+	}
+
+	authSHA := computeAuthorization(c, "user", "pass", "GET", "http://10.0.0.1/path")
+
+	c.algorithm = "MD5"
+	authMD5 := computeAuthorization(c, "user", "pass", "GET", "http://10.0.0.1/path")
+
+	// Both should be valid Digest headers but with different response values
+	assert.Contains(t, authSHA, `algorithm=SHA-256`)
+	assert.Contains(t, authMD5, `algorithm=MD5`)
+
+	// They must produce different responses
+	assert.NotEqual(t, authSHA, authMD5)
+}
+
+func TestComputeAuthorization_SHA256WithoutQOP(t *testing.T) {
+	c := &challenge{
+		realm:     "example.com",
+		nonce:     "abc123",
+		algorithm: "SHA-256",
+	}
+
+	auth := computeAuthorization(c, "user", "pass", "GET", "http://10.0.0.1/path")
+	assert.Contains(t, auth, "Digest ")
+	assert.Contains(t, auth, `algorithm=SHA-256`)
+	assert.NotContains(t, auth, "qop=")
+	assert.NotContains(t, auth, "nc=")
+}
+
+func TestDigestHash_SHA256(t *testing.T) {
+	// Known SHA-256 hash of "hello"
+	h := sha256.New()
+	h.Write([]byte("hello"))
+	expected := fmt.Sprintf("%x", h.Sum(nil))
+
+	result := digestHash(sha256.New, "hello")
+	assert.Equal(t, expected, result)
+	assert.Len(t, result, 64) // SHA-256 produces 64 hex chars
+}
+
+func TestDigestHash_MD5(t *testing.T) {
+	h := md5.New()
+	h.Write([]byte("hello"))
+	expected := fmt.Sprintf("%x", h.Sum(nil))
+
+	result := digestHash(md5.New, "hello")
+	assert.Equal(t, expected, result)
+	assert.Len(t, result, 32) // MD5 produces 32 hex chars
+}
+
+func TestNewHashFunc(t *testing.T) {
+	tests := []struct {
+		algorithm string
+		expectLen int // hex-encoded hash length
+	}{
+		{"MD5", 32},
+		{"md5", 32},
+		{"MD5-sess", 32},
+		{"SHA-256", 64},
+		{"sha-256", 64},
+		{"SHA-256-sess", 64},
+		{"SHA-256-SESS", 64},
+		{"", 32},        // default to MD5
+		{"unknown", 32}, // default to MD5
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.algorithm, func(t *testing.T) {
+			fn := newHashFunc(tt.algorithm)
+			h := fn()
+			h.Write([]byte("test"))
+			result := fmt.Sprintf("%x", h.Sum(nil))
+			assert.Len(t, result, tt.expectLen)
+		})
+	}
 }

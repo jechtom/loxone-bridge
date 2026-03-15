@@ -4,7 +4,9 @@ package digest
 import (
 	"bytes"
 	"crypto/md5" //nolint:gosec // MD5 is required by digest auth spec
+	"crypto/sha256"
 	"fmt"
+	"hash"
 	"io"
 	"math/rand"
 	"net/http"
@@ -140,22 +142,34 @@ func splitChallenge(s string) []string {
 }
 
 // computeAuthorization builds the Authorization header value for digest auth.
+// Supports MD5, MD5-sess, SHA-256, and SHA-256-sess algorithms (RFC 7616).
 func computeAuthorization(c *challenge, username, password, method, uri string) string {
-	ha1 := md5Hash(fmt.Sprintf("%s:%s:%s", username, c.realm, password))
+	hashFn := newHashFunc(c.algorithm)
 
 	// Extract just the path from the URI for the digest calculation
 	digestURI := extractPath(uri)
 
-	ha2 := md5Hash(fmt.Sprintf("%s:%s", method, digestURI))
-
 	cnonce := generateCNonce()
 	nc := "00000001"
 
+	// Compute HA1
+	ha1 := digestHash(hashFn, fmt.Sprintf("%s:%s:%s", username, c.realm, password))
+
+	// For -sess variants, HA1 = H(H(username:realm:password):nonce:cnonce)
+	algoUpper := strings.ToUpper(c.algorithm)
+	if algoUpper == "MD5-SESS" || algoUpper == "SHA-256-SESS" {
+		ha1 = digestHash(hashFn, fmt.Sprintf("%s:%s:%s", ha1, c.nonce, cnonce))
+	}
+
+	// Compute HA2
+	ha2 := digestHash(hashFn, fmt.Sprintf("%s:%s", method, digestURI))
+
+	// Compute response
 	var response string
 	if c.qop == "auth" || c.qop == "auth-int" {
-		response = md5Hash(fmt.Sprintf("%s:%s:%s:%s:%s:%s", ha1, c.nonce, nc, cnonce, c.qop, ha2))
+		response = digestHash(hashFn, fmt.Sprintf("%s:%s:%s:%s:%s:%s", ha1, c.nonce, nc, cnonce, c.qop, ha2))
 	} else {
-		response = md5Hash(fmt.Sprintf("%s:%s:%s", ha1, c.nonce, ha2))
+		response = digestHash(hashFn, fmt.Sprintf("%s:%s:%s", ha1, c.nonce, ha2))
 	}
 
 	header := fmt.Sprintf(`Digest username="%s", realm="%s", nonce="%s", uri="%s", response="%s"`,
@@ -189,8 +203,21 @@ func extractPath(rawURL string) string {
 	return rest[slashIdx:]
 }
 
-func md5Hash(s string) string {
-	h := md5.New() //nolint:gosec
+// newHashFunc returns a hash.Hash constructor for the given digest algorithm.
+// Defaults to MD5 for unknown algorithms per RFC 2617 backwards compatibility.
+func newHashFunc(algorithm string) func() hash.Hash {
+	switch strings.ToUpper(algorithm) {
+	case "SHA-256", "SHA-256-SESS":
+		return sha256.New
+	default:
+		// MD5, MD5-sess, or unrecognized — default to MD5
+		return md5.New //nolint:gosec
+	}
+}
+
+// digestHash computes the hex-encoded hash of s using the provided hash constructor.
+func digestHash(newHash func() hash.Hash, s string) string {
+	h := newHash()
 	h.Write([]byte(s))
 	return fmt.Sprintf("%x", h.Sum(nil))
 }
